@@ -11,16 +11,28 @@ BiliAudio 是可选安装的独立插件，不会修改云音乐插件。它支�
 
 仓库只提交源码，不提交机器人依赖 DLL 或编译产物。正式 Release 发布前，可以从成功的 [Actions 构建](https://github.com/Plumess/TS3AudioBot-BiliAudio/actions/workflows/build.yml)下载对应 ZIP；发布后也可从 Releases 下载。
 
-## Docker Compose 安装
+## Docker Compose 一行安装
+
+正式 Release 发布后，在**已经运行的机器人 Compose 目录**执行（需 Docker Compose 和宿主机 Python 3.11+）：
+
+```sh
+curl -fsSLo biliaudio-install.py https://github.com/Plumess/TS3AudioBot-BiliAudio/releases/latest/download/install.py && python3.11 biliaudio-install.py --compose ./docker-compose.yml
+```
+
+安装器会识别机器人容器的 `./data` bind mount，下载官方 yt-dlp 和匹配的插件 ZIP，核对 Release 校验值与**运行中机器人的 DLL 指纹**，备份旧文件、生成可自动加载的 Compose 附加文件，启动解析服务并检查健康状态。重复执行可升级；不匹配的稳定版或 nightly 会在改动文件前停止。若主文件名不是 `docker-compose.yml`，替换 `--compose` 参数；使用非标准机器人镜像时可用 `--bot-dll` 指定容器内 DLL 路径。
+
+安装器只支持常见的 Compose 文件名、运行中的机器人服务和 bind mount 数据目录；已有手工部署的侧车、用户维护的同名 override 文件或自定义插件目录会停止并给出原因，不会强行覆盖。可用 `--service` 指定机器人服务名。交互运行时可选择按 TeamSpeak 服务器组 ID 或用户 UID 授权，也可跳过；非交互运行默认不改 `rights.toml`。之后在机器人聊天中执行 `!plugin load BiliAudio.dll`，更新已有插件时先 `!plugin unload BiliAudio.dll` 再加载，修改了权限则再执行 `!rights reload`。远程脚本会在本机执行；可先检查下载的 `biliaudio-install.py` 再运行。
+
+## Docker Compose 手动安装
 
 以下示例假设机器人服务名为 `ts3audiobot`，数据目录为第一个 Compose 文件旁的 `./data`：
 
 1. 将 ZIP 中的 `BiliAudio.dll` 放到 `data/plugins/`，将 `extractor.py` 复制为 `data/plugins/bili-extractor.py`。
 2. 将官方 [yt-dlp 发布文件](https://github.com/yt-dlp/yt-dlp/releases)放到 `data/plugins/tools/yt-dlp`，并赋予执行权限。ZIP 不包含 yt-dlp 或 FFmpeg。
-3. 将[示例 Compose 附加文件](examples/docker-compose.bili.yml)与现有 Compose 文件一起启动：
+3. 将 ZIP 根目录中的 `docker-compose.bili.yml` 放到机器人 Compose 文件旁（仓库中也有[同一示例](examples/docker-compose.bili.yml)），然后一起启动：
 
 ```sh
-docker compose -f docker-compose.yml -f /path/to/examples/docker-compose.bili.yml up -d
+docker compose -f docker-compose.yml -f ./docker-compose.bili.yml up -d
 ```
 
 附加服务与机器人共用网络命名空间，解析服务只监听 `127.0.0.1:18944`，不会对外开放新端口。健康检查会在 yt-dlp 缺失时标记服务异常。若机器人服务名不同，需修改附加文件中的 `network_mode`。附加文件的 `./data/...` 路径相对于第一个 Compose 文件解析。
@@ -67,4 +79,4 @@ docker compose -f docker-compose.yml -f /path/to/examples/docker-compose.bili.ym
 
 ## 开发与验证
 
-将对应版本的 `TS3AudioBot.dll`、`TSLib.dll` 和 `NLog.dll` 放入 `src/lib/`，使用 .NET Core 3.1 SDK 执行 `dotnet build src/BiliAudio.csproj -t:Rebuild -c Release`，再运行 `dotnet run --project tests/BiliAudio.Tests.csproj -c Release` 检查依赖版本、队列与音频中继。更换参照 DLL 后务必重新构建，避免沿用旧版本产物。运行 `python3 -m unittest discover -s src -p 'test_*.py'` 检查解析服务。CI 会分别对稳定版和 nightly 构建、测试并打包；依赖 DLL 和构建产物不会提交到 Git。
+将对应版本的 `TS3AudioBot.dll`、`TSLib.dll` 和 `NLog.dll` 放入 `src/lib/`，使用 .NET Core 3.1 SDK 执行 `dotnet build src/BiliAudio.csproj -t:Rebuild -c Release`，再运行 `dotnet run --project tests/BiliAudio.Tests.csproj -c Release` 检查依赖版本、队列与音频中继。更换参照 DLL 后务必重新构建，避免沿用旧版本产物。运行 `python3 -m unittest discover -s src -p 'test_*.py'` 检查解析服务，运行 `python3.11 -m unittest discover -s tests -p 'test_*.py'` 检查安装器。CI 会分别对稳定版和 nightly 构建、测试并打包；依赖 DLL 和构建产物不会提交到 Git。

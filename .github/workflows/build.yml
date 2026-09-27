@@ -29,6 +29,8 @@ jobs:
           unzip -j /tmp/ts3ab.zip TS3AudioBot.dll TSLib.dll NLog.dll -d src/lib
       - name: Test extractor
         run: python3 -m unittest discover -s src -p 'test_*.py'
+      - name: Test installer
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Build plugin
         run: |
           docker run --rm --user "$(id -u):$(id -g)" \
@@ -46,6 +48,7 @@ jobs:
         run: |
           mkdir -p dist
           cp src/bin/Release/netcoreapp3.1/BiliAudio.dll src/extractor.py examples/docker-compose.bili.yml dist/
+          sha256sum src/lib/TS3AudioBot.dll | cut -d ' ' -f 1 > dist/TS3AudioBot.sha256
           cd dist
           zip -q -j "../BiliAudio-${{ matrix.variant }}.zip" ./*
       - uses: actions/upload-artifact@v7
@@ -65,7 +68,12 @@ jobs:
           pattern: BiliAudio-*
           merge-multiple: true
           path: dist
+      - name: Checksum release archives
+        run: cd dist && sha256sum BiliAudio-*.zip > SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: dist/*.zip
+          files: |
+            dist/*.zip
+            dist/SHA256SUMS
+            install.py

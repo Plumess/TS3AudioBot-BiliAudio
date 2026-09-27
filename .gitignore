@@ -2,6 +2,8 @@ src/lib/
 src/bin/
 src/obj/
 src/__pycache__/
+__pycache__/
+tests/__pycache__/
 tests/bin/
 tests/obj/
 dist/
