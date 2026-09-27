@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <AssemblyName>BiliAudio</AssemblyName>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="TS3AudioBot"><HintPath>lib/TS3AudioBot.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="TSLib"><HintPath>lib/TSLib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="NLog"><HintPath>lib/NLog.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

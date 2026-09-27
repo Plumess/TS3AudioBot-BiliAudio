@@ -1,0 +1,5 @@
+src/lib/
+src/bin/
+src/obj/
+src/__pycache__/
+dist/

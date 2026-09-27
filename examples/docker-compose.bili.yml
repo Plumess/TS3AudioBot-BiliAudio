@@ -1,0 +1,15 @@
+services:
+  bili-extractor:
+    image: python:3.13-alpine
+    restart: unless-stopped
+    command: ["python", "/app/extractor.py"]
+    network_mode: "service:ts3audiobot"
+    read_only: true
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      BILI_YTDLP_BIN: /app/yt-dlp
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    volumes:
+      - ./data/plugins/bili-extractor.py:/app/extractor.py:ro
+      - ./data/plugins/tools/yt-dlp:/app/yt-dlp:ro

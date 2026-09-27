@@ -1,0 +1,64 @@
+name: Build plugin
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - variant: stable-0.12.0
+            bot_url: https://github.com/Splamy/TS3AudioBot/releases/download/0.12.0/TS3AudioBot_dotnetcore3.1.zip
+          - variant: master-nightly
+            bot_url: https://splamy.de/api/nightly/projects/ts3ab/master/download
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download matching bot references
+        run: |
+          curl -fL --retry 3 "${{ matrix.bot_url }}" -o /tmp/ts3ab.zip
+          mkdir -p src/lib
+          unzip -j /tmp/ts3ab.zip TS3AudioBot.dll TSLib.dll NLog.dll -d src/lib
+      - name: Test extractor
+        run: python3 -m unittest discover -s src -p 'test_*.py'
+      - name: Build plugin
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -e DOTNET_CLI_HOME=/tmp -e XDG_DATA_HOME=/tmp \
+            -v "$PWD:/src" -w /src/src \
+            mcr.microsoft.com/dotnet/core/sdk:3.1 dotnet build -c Release
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp src/bin/Release/netcoreapp3.1/BiliAudio.dll src/extractor.py examples/docker-compose.bili.yml dist/
+          cd dist
+          zip -q -j "../BiliAudio-${{ matrix.variant }}.zip" ./*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BiliAudio-${{ matrix.variant }}
+          path: BiliAudio-${{ matrix.variant }}.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: BiliAudio-*
+          merge-multiple: true
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/*.zip
