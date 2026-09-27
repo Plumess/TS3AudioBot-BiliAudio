@@ -102,13 +102,27 @@ docker compose -f docker-compose.yml -f ./docker-compose.bili.yml up -d
 
 粘贴的文字中只要含有可识别的 B 站链接，也可以直接交给播放命令。`!bili play` 遇到列表链接时会按顺序播放；`!bili mode` 只影响尚未播放的条目。
 
+## 开发与验证
+
+先把**与目标机器人版本一致**的 `TS3AudioBot.dll`、`TSLib.dll` 和 `NLog.dll` 放入 `src/lib/`。使用 .NET Core 3.1 SDK 构建：
+
+```sh
+dotnet build src/BiliAudio.csproj -t:Rebuild -c Release
+```
+
+更换参照 DLL 后必须重新构建，避免沿用旧版本产物。接着运行插件逻辑、解析服务和安装器测试：
+
+```sh
+dotnet run --project tests/BiliAudio.Tests.csproj -c Release
+python3 -m unittest discover -s src -p 'test_*.py'
+python3.11 -m unittest discover -s tests -p 'test_*.py'
+```
+
+Docker 安装流程的隔离实测另见 `tests/integration_install.py`。CI 会分别对稳定版和 nightly 构建、测试并打包；机器人依赖 DLL 和编译产物不会提交到 Git。
+
 ## 相关项目与致谢
 
 - [Splamy/TS3AudioBot](https://github.com/Splamy/TS3AudioBot) 提供机器人和插件 API（OSL-3.0）。
 - [yt-dlp/yt-dlp](https://github.com/yt-dlp/yt-dlp) 及其 B 站提取器贡献者维护站点解析逻辑。本项目调用其独立发布文件，不复制提取器源码。
 - [xxmod/TS3AudioBot-BiliBiliPlugin](https://github.com/xxmod/TS3AudioBot-BiliBiliPlugin) 是已有的社区插件，提供登录、历史、单条队列、分 P 选择和合集播放等功能（MPL-2.0）。BiliAudio 侧重公开链接、列表顺序/随机播放及 Docker 部署，没有复制该项目的代码。
 - [577fkj/TS3AudioBot-CloudMusic-plugin](https://github.com/577fkj/TS3AudioBot-CloudMusic-plugin) 提供了 TS3AudioBot 插件发布与安装方式的参考。
-
-## 开发与验证
-
-将对应版本的 `TS3AudioBot.dll`、`TSLib.dll` 和 `NLog.dll` 放入 `src/lib/`，使用 .NET Core 3.1 SDK 执行 `dotnet build src/BiliAudio.csproj -t:Rebuild -c Release`，再运行 `dotnet run --project tests/BiliAudio.Tests.csproj -c Release` 检查依赖版本、队列与音频中继。更换参照 DLL 后务必重新构建，避免沿用旧版本产物。运行 `python3 -m unittest discover -s src -p 'test_*.py'` 检查解析服务，运行 `python3.11 -m unittest discover -s tests -p 'test_*.py'` 检查安装器。CI 会分别对稳定版和 nightly 构建、测试并打包；依赖 DLL 和构建产物不会提交到 Git。
