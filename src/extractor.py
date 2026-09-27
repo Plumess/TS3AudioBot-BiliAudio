@@ -24,6 +24,23 @@ def yt_dlp_command(binary):
 YTDLP_COMMAND = yt_dlp_command(os.environ.get("BILI_YTDLP_BIN", "yt-dlp"))
 
 
+def yt_dlp_available():
+    binary = YTDLP_COMMAND[-1]
+    return os.path.isfile(binary) if len(YTDLP_COMMAND) > 1 else shutil.which(binary) is not None
+
+
+class ExtractorUnavailable(Exception):
+    pass
+
+
+def run_yt_dlp(args, timeout):
+    try:
+        return subprocess.run([*YTDLP_COMMAND, *args], capture_output=True,
+                              text=True, timeout=timeout, check=False)
+    except OSError as exc:
+        raise ExtractorUnavailable from exc
+
+
 def valid_video(url):
     parsed = urlsplit(url)
     return (parsed.scheme == "https" and
@@ -61,7 +78,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self.reply(200, {"ok": True})
+            ready = yt_dlp_available()
+            self.reply(200 if ready else 503, {"ok": ready} if ready else
+                       {"ok": False, "error": "yt-dlp 未安装或不可执行"})
         else:
             self.reply(404, {"error": "not found"})
 
@@ -83,11 +102,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.path == "/list":
                 return self.list_entries(url)
-            result = subprocess.run(
-                [*YTDLP_COMMAND, "--no-cache-dir", "--no-playlist", "--no-warnings", "--skip-download",
-                 "--dump-json", "--format", "bestaudio", "--", url],
-                capture_output=True, text=True, timeout=30, check=False,
-            )
+            result = run_yt_dlp(
+                ["--no-cache-dir", "--no-playlist", "--no-warnings", "--skip-download",
+                 "--dump-json", "--format", "bestaudio", "--", url], 30)
             if result.returncode:
                 return self.reply(422, {"error": result.stderr.strip()[-300:] or "video unavailable"})
             if len(result.stdout) > 4 * 1024 * 1024:
@@ -103,6 +120,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, {"url": audio_url, "title": info.get("title") or "Bilibili video", "http_headers": headers})
         except subprocess.TimeoutExpired:
             self.reply(504, {"error": "video extraction timed out"})
+        except ExtractorUnavailable:
+            self.reply(503, {"error": "yt-dlp 未安装或不可执行"})
         except (ValueError, KeyError, TypeError):
             self.reply(422, {"error": "invalid video metadata"})
         finally:
@@ -110,12 +129,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def list_entries(self, url):
         # 只读取扁平列表；音频地址留到曲目实际开始播放时再解析。
-        result = subprocess.run(
-            [*YTDLP_COMMAND, "--no-cache-dir", "--yes-playlist", "--flat-playlist",
+        result = run_yt_dlp(
+            ["--no-cache-dir", "--yes-playlist", "--flat-playlist",
              "--playlist-end", str(LIST_LIMIT), "--dump-single-json", "--no-warnings",
-             "--", url],
-            capture_output=True, text=True, timeout=45, check=False,
-        )
+             "--", url], 45)
         if result.returncode:
             return self.reply(422, {"error": result.stderr.strip()[-300:] or "playlist unavailable"})
         if len(result.stdout) > 1024 * 1024:

@@ -23,7 +23,7 @@ BiliAudio 是可选安装的独立插件，不会修改云音乐插件。它支�
 docker compose -f docker-compose.yml -f /path/to/examples/docker-compose.bili.yml up -d
 ```
 
-附加服务与机器人共用网络命名空间，解析服务只监听 `127.0.0.1:18944`，不会对外开放新端口。若机器人服务名不同，需修改附加文件中的 `network_mode`。附加文件的 `./data/...` 路径相对于第一个 Compose 文件解析。
+附加服务与机器人共用网络命名空间，解析服务只监听 `127.0.0.1:18944`，不会对外开放新端口。健康检查会在 yt-dlp 缺失时标记服务异常。若机器人服务名不同，需修改附加文件中的 `network_mode`。附加文件的 `./data/...` 路径相对于第一个 Compose 文件解析。
 
 最后，在机器人的 `rights.toml` 中授予相应用户 `cmd.bili.*` 和 `cmd.bplay` 权限；执行 `!plugin load BiliAudio.dll` 加载插件，或将它加入机器人的连接后执行命令。
 
@@ -67,4 +67,4 @@ docker compose -f docker-compose.yml -f /path/to/examples/docker-compose.bili.ym
 
 ## 开发与验证
 
-将对应版本的 `TS3AudioBot.dll`、`TSLib.dll` 和 `NLog.dll` 放入 `src/lib/`，使用 .NET Core 3.1 SDK 构建 `src/BiliAudio.csproj`。运行 `python3 -m unittest discover -s src -p 'test_*.py'` 检查解析服务。CI 会分别对稳定版和 nightly 构建、测试并打包；依赖 DLL 和构建产物不会提交到 Git。
+将对应版本的 `TS3AudioBot.dll`、`TSLib.dll` 和 `NLog.dll` 放入 `src/lib/`，使用 .NET Core 3.1 SDK 执行 `dotnet build src/BiliAudio.csproj -t:Rebuild -c Release`，再运行 `dotnet run --project tests/BiliAudio.Tests.csproj -c Release` 检查依赖版本、队列与音频中继。更换参照 DLL 后务必重新构建，避免沿用旧版本产物。运行 `python3 -m unittest discover -s src -p 'test_*.py'` 检查解析服务。CI 会分别对稳定版和 nightly 构建、测试并打包；依赖 DLL 和构建产物不会提交到 Git。

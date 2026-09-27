@@ -34,7 +34,14 @@ jobs:
           docker run --rm --user "$(id -u):$(id -g)" \
             -e DOTNET_CLI_HOME=/tmp -e XDG_DATA_HOME=/tmp \
             -v "$PWD:/src" -w /src/src \
-            mcr.microsoft.com/dotnet/core/sdk:3.1 dotnet build -c Release
+            mcr.microsoft.com/dotnet/core/sdk:3.1 dotnet build -t:Rebuild -c Release
+      - name: Test plugin logic
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -e DOTNET_CLI_HOME=/tmp -e XDG_DATA_HOME=/tmp \
+            -v "$PWD:/src" -w /src \
+            mcr.microsoft.com/dotnet/core/sdk:3.1 \
+            dotnet run --project tests/BiliAudio.Tests.csproj -c Release
       - name: Package
         run: |
           mkdir -p dist

@@ -322,11 +322,12 @@ namespace BiliAudio
             HttpResponseMessage response;
             try { response = await ListClient.SendAsync(request); }
             catch (HttpRequestException) { throw new InvalidOperationException("Bilibili 解析服务未运行"); }
+            catch (OperationCanceledException) { throw new InvalidOperationException("Bilibili 解析超时"); }
             using (response)
             {
                 var json = await response.Content.ReadAsStringAsync();
                 if (!response.IsSuccessStatusCode)
-                    throw new InvalidOperationException(json.Length > 400 ? json.Substring(0, 400) : json);
+                    throw new InvalidOperationException(ErrorMessage(json));
                 if (json.Length > 128 * 1024) throw new InvalidOperationException("列表结果过大");
                 return JsonSerializer.Deserialize<BiliList>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
                     ?? throw new InvalidOperationException("列表结果无效");
@@ -342,15 +343,34 @@ namespace BiliAudio
             HttpResponseMessage response;
             try { response = await Client.SendAsync(request); }
             catch (HttpRequestException) { throw new InvalidOperationException("Bilibili 解析服务未运行"); }
+            catch (OperationCanceledException) { throw new InvalidOperationException("Bilibili 解析超时"); }
             using (response)
             {
                 var json = await response.Content.ReadAsStringAsync();
                 if (!response.IsSuccessStatusCode)
-                    throw new InvalidOperationException(json.Length > 400 ? json.Substring(0, 400) : json);
+                    throw new InvalidOperationException(ErrorMessage(json));
                 if (json.Length > 64 * 1024)
                     throw new InvalidOperationException("解析结果过大");
                 return Parse(json);
             }
+        }
+
+        internal static string ErrorMessage(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return "解析服务返回空错误";
+            try
+            {
+                using var document = JsonDocument.Parse(json);
+                if (document.RootElement.ValueKind == JsonValueKind.Object &&
+                    document.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String)
+                {
+                    var message = error.GetString();
+                    if (!string.IsNullOrWhiteSpace(message))
+                        return message!.Length > 400 ? message.Substring(0, 400) : message;
+                }
+            }
+            catch (JsonException) { }
+            return json.Length > 400 ? json.Substring(0, 400) : json;
         }
 
         private static AudioSource Parse(string json)
@@ -381,25 +401,71 @@ namespace BiliAudio
     internal sealed class AudioRelay : IDisposable
     {
         private static readonly NLog.Logger Log = NLog.LogManager.GetCurrentClassLogger();
-        private const int Port = 18943;
-        private readonly HttpClient client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = true })
-        {
-            Timeout = TimeSpan.FromMinutes(10)
-        };
+        private const int DefaultPort = 18943;
+        private readonly HttpClient client;
         private readonly HttpListener listener = new HttpListener();
         private readonly SemaphoreSlim slots = new SemaphoreSlim(2, 2);
+        private readonly int port;
+        private readonly TimeSpan slotWaitTimeout;
         private volatile bool disposed;
         private RelayEntry? current;
 
+        // 旧曲取消后仍可能有请求收尾；引用计数避免过早释放取消令牌。
         private sealed class RelayEntry
         {
             public string Token { get; set; } = "";
             public AudioSource Source { get; set; } = new AudioSource();
+            private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
+            private int active;
+            private int retired;
+            private int cancellationComplete;
+            private int cancellationDisposed;
+
+            public CancellationToken CancellationToken => cancellation.Token;
+
+            public bool TryEnter()
+            {
+                if (Volatile.Read(ref retired) != 0) return false;
+                Interlocked.Increment(ref active);
+                if (Volatile.Read(ref retired) == 0) return true;
+                Exit();
+                return false;
+            }
+
+            public void Exit()
+            {
+                Interlocked.Decrement(ref active);
+                DisposeIfIdle();
+            }
+
+            public void Retire()
+            {
+                if (Interlocked.Exchange(ref retired, 1) != 0) return;
+                cancellation.Cancel();
+                Volatile.Write(ref cancellationComplete, 1);
+                DisposeIfIdle();
+            }
+
+            private void DisposeIfIdle()
+            {
+                if (Volatile.Read(ref active) == 0 && Volatile.Read(ref cancellationComplete) != 0 &&
+                    Interlocked.Exchange(ref cancellationDisposed, 1) == 0)
+                    cancellation.Dispose();
+            }
+        }
+
+        public AudioRelay() : this(new HttpClientHandler { AllowAutoRedirect = true }, DefaultPort, TimeSpan.FromSeconds(4)) { }
+
+        internal AudioRelay(HttpMessageHandler handler, int port, TimeSpan slotWaitTimeout)
+        {
+            client = new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(10) };
+            this.port = port;
+            this.slotWaitTimeout = slotWaitTimeout;
         }
 
         public void Start()
         {
-            listener.Prefixes.Add($"http://127.0.0.1:{Port}/");
+            listener.Prefixes.Add($"http://127.0.0.1:{port}/");
             listener.Start();
             _ = AcceptLoop();
         }
@@ -408,12 +474,13 @@ namespace BiliAudio
         {
             // 新曲目发布后，上一曲目的本地中继地址立即失效。
             var next = Guid.NewGuid().ToString("N");
-            Volatile.Write(ref current, new RelayEntry
+            var previous = Interlocked.Exchange(ref current, new RelayEntry
             {
                 Token = next,
                 Source = new AudioSource { Url = url, Headers = headers }
             });
-            return $"http://127.0.0.1:{Port}/{next}/audio";
+            previous?.Retire();
+            return $"http://127.0.0.1:{port}/{next}/audio";
         }
 
         private async Task AcceptLoop()
@@ -439,34 +506,54 @@ namespace BiliAudio
                     context.Response.StatusCode = 404;
                     return;
                 }
-                await slots.WaitAsync();
+                if (!entry.TryEnter())
+                {
+                    context.Response.StatusCode = 404;
+                    return;
+                }
                 try
                 {
-                    using var request = new HttpRequestMessage(HttpMethod.Get, entry.Source.Url);
-                    foreach (var header in entry.Source.Headers)
-                        request.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                    var range = context.Request.Headers["Range"];
-                    if (!string.IsNullOrEmpty(range))
-                        request.Headers.TryAddWithoutValidation("Range", range);
-                    using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-                    context.Response.StatusCode = (int)response.StatusCode;
-                    context.Response.ContentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
-                    if (response.Content.Headers.ContentLength.HasValue)
-                        context.Response.ContentLength64 = response.Content.Headers.ContentLength.Value;
-                    if (response.Content.Headers.ContentRange != null)
-                        context.Response.Headers["Content-Range"] = response.Content.Headers.ContentRange.ToString();
-                    context.Response.Headers["Accept-Ranges"] = "bytes";
-                    if (context.Request.HttpMethod == "HEAD" || !response.IsSuccessStatusCode)
+                    // 等待槽位和传输过程都受当前曲目的取消信号约束。
+                    if (!await slots.WaitAsync(slotWaitTimeout, entry.CancellationToken))
+                    {
+                        context.Response.StatusCode = 503;
                         return;
-                    using var body = await response.Content.ReadAsStreamAsync();
-                    var buffer = new byte[64 * 1024];
-                    int count;
-                    while ((count = await body.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                        await context.Response.OutputStream.WriteAsync(buffer, 0, count);
+                    }
+                    try
+                    {
+                        if (!ReferenceEquals(entry, Volatile.Read(ref current)))
+                        {
+                            context.Response.StatusCode = 404;
+                            return;
+                        }
+                        using var request = new HttpRequestMessage(HttpMethod.Get, entry.Source.Url);
+                        foreach (var header in entry.Source.Headers)
+                            request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                        var range = context.Request.Headers["Range"];
+                        if (!string.IsNullOrEmpty(range))
+                            request.Headers.TryAddWithoutValidation("Range", range);
+                        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, entry.CancellationToken);
+                        context.Response.StatusCode = (int)response.StatusCode;
+                        context.Response.ContentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
+                        if (response.Content.Headers.ContentLength.HasValue)
+                            context.Response.ContentLength64 = response.Content.Headers.ContentLength.Value;
+                        if (response.Content.Headers.ContentRange != null)
+                            context.Response.Headers["Content-Range"] = response.Content.Headers.ContentRange.ToString();
+                        context.Response.Headers["Accept-Ranges"] = "bytes";
+                        if (context.Request.HttpMethod == "HEAD" || !response.IsSuccessStatusCode)
+                            return;
+                        using var body = await response.Content.ReadAsStreamAsync();
+                        var buffer = new byte[64 * 1024];
+                        int count;
+                        while ((count = await body.ReadAsync(buffer, 0, buffer.Length, entry.CancellationToken)) > 0)
+                            await context.Response.OutputStream.WriteAsync(buffer, 0, count, entry.CancellationToken);
+                    }
+                    finally { slots.Release(); }
                 }
-                finally { slots.Release(); }
+                finally { entry.Exit(); }
             }
-            catch (Exception ex) when (ex is HttpRequestException || ex is IOException || ex is ObjectDisposedException)
+            catch (Exception ex) when (ex is HttpRequestException || ex is IOException || ex is ObjectDisposedException ||
+                                       ex is OperationCanceledException || ex is HttpListenerException)
             {
                 Log.Debug(ex, "Audio stream closed");
             }
@@ -479,6 +566,7 @@ namespace BiliAudio
         public void Dispose()
         {
             disposed = true;
+            Interlocked.Exchange(ref current, null)?.Retire();
             listener.Stop();
             listener.Close();
             client.Dispose();
