@@ -4,7 +4,7 @@ Optional Bilibili audio playback for TS3AudioBot. Plays public videos, favorites
 
 ## Compatibility
 
-The release artifacts are built for TS3AudioBot 0.12.0 and the master nightly build. Choose the archive matching your bot. FFmpeg, Python 3.10+, and a current `yt-dlp` executable are required. This plugin does not install or modify YunPlugin.
+The build workflow targets TS3AudioBot 0.12.0 and the master nightly build. Choose the archive matching your bot when a release is available. FFmpeg, Python 3.10+, and a current `yt-dlp` executable are required. This plugin does not install or modify YunPlugin.
 
 ## Install without Docker
 
@@ -16,7 +16,7 @@ Set `BILI_YTDLP_BIN` for a custom yt-dlp path or `BILI_EXTRACTOR_URL` in the bot
 
 ## Install with Docker Compose
 
-For a Compose service named `ts3audiobot`, put `BiliAudio.dll` and `bili-extractor.py` in the bot's `data/plugins/` directory. Download the official yt-dlp release executable to `data/plugins/tools/yt-dlp` and make it executable. The sample [Compose overlay](examples/docker-compose.bili.yml) shares the bot's network namespace, so the extractor remains on loopback and no new port is published. Use it alongside your bot Compose file, then grant `cmd.bili.*` and `cmd.bplay` and load the plugin as above.
+For a Compose service named `ts3audiobot`, put `BiliAudio.dll` in the bot's `data/plugins/` directory and copy the archive's `extractor.py` there as `bili-extractor.py`. Download the official yt-dlp release executable to `data/plugins/tools/yt-dlp` and make it executable. The sample [Compose overlay](examples/docker-compose.bili.yml) shares the bot's network namespace, so the extractor remains on loopback and no new port is published. Use it alongside your bot Compose file, then grant `cmd.bili.*` and `cmd.bplay` and load the plugin as above.
 
 ```sh
 docker compose -f docker-compose.yml -f /path/to/examples/docker-compose.bili.yml up -d
@@ -43,7 +43,7 @@ Compose resolves the overlay's `./data/...` bind paths relative to the first Com
 
 - [Splamy/TS3AudioBot](https://github.com/Splamy/TS3AudioBot) provides the bot and plugin API (OSL-3.0).
 - [yt-dlp/yt-dlp](https://github.com/yt-dlp/yt-dlp) and its Bilibili extractor contributors provide the site parsing logic. This project runs its official release as a separate tool; it does not reimplement their extractor.
-- [xxmod/TS3AudioBot-BiliBiliPlugin](https://github.com/xxmod/TS3AudioBot-BiliBiliPlugin) is an existing community plugin with account login, history, and queue features (MPL-2.0). BiliAudio is a separate implementation focused on portable link/list playback and low disk usage; no code from that project was copied.
+- [xxmod/TS3AudioBot-BiliBiliPlugin](https://github.com/xxmod/TS3AudioBot-BiliBiliPlugin) is an existing community plugin with account login, history, queue, multi-part selection, and collection playback (MPL-2.0). Choose it for account-based features. BiliAudio is a separate implementation focused on public favorite/list links, sequential or shuffled playback, Docker deployment, and low disk usage; no code from that project was copied.
 - [577fkj/TS3AudioBot-CloudMusic-plugin](https://github.com/577fkj/TS3AudioBot-CloudMusic-plugin) demonstrates the release-and-install pattern used by TS3AudioBot plugins.
 
 ## Development
