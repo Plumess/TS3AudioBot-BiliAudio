@@ -1,13 +1,39 @@
 # BiliAudio：TS3AudioBot 的 B 站音频插件
 
-BiliAudio 是可选安装的独立插件，不会修改云音乐插件。它支持播放 B 站公开视频、公开收藏夹、UP 主合集/系列及多 P 视频；列表可顺序或随机播放。站点解析交给 [yt-dlp](https://github.com/yt-dlp/yt-dlp)，音频通过本地服务流式转发，不保存媒体文件。
+BiliAudio 让已有的 TS3AudioBot 播放 B 站音频：粘贴视频或公开列表链接，就能顺序或随机播放。它是**可选插件，不是另一台机器人**；站点解析交给 [yt-dlp](https://github.com/yt-dlp/yt-dlp)，播放时流式转发音频，不保存媒体文件。
 
-## 适用范围
+## 它在什么位置？
 
-- 支持完整视频链接和 `b23.tv` 单视频短链接；多 P 视频可用链接中的 `?p=2` 指定分 P，也可用 `!bili list` 连播。
-- 每次最多读取列表前 100 条，只在轮到某条视频时解析其音频地址。
-- 不支持直接输入 BV 号、单条视频加入待播列表或交互式选分 P。账号登录、观看历史、私密收藏夹、付费及 DRM 内容也不在支持范围内。
-- 需要 TS3AudioBot、FFmpeg、Python 3.10+ 和官方发布的 `yt-dlp`。构建流程分别适配 TS3AudioBot 0.12.0 与 master nightly，请使用与机器人版本匹配的插件 DLL。
+```text
+TeamSpeak 频道
+└── TS3AudioBot（连接频道的机器人；一个发声用户）
+    ├── BiliAudio.dll（!bili；本项目）
+    │   └── 独立解析服务 extractor.py → yt-dlp → B 站公开音源
+    └── 云音乐插件，例如 YunBot.dll（!yun；可选，非本项目依赖）
+```
+
+音频路径：`B 站链接 → yt-dlp 找到音源 → BiliAudio 本地中继 → TS3AudioBot / FFmpeg → TeamSpeak 频道`。
+
+| 组件 | 职责 | 安装关系 |
+| --- | --- | --- |
+| TS3AudioBot + FFmpeg | 连接 TeamSpeak、管理播放并输出声音 | **必须先有**；BiliAudio 不能单独运行 |
+| BiliAudio.dll | 接受 `!bili` 命令，把音频交给机器人播放 | 本项目的插件，加载到 TS3AudioBot |
+| 解析服务 + yt-dlp | 从 B 站公开链接找到可播放的音频地址 | 独立进程/容器；使用 Python 3.10+，不连接 TeamSpeak |
+| 云音乐插件 | 提供自己的 `!yun` 命令和音乐来源 | 与 BiliAudio **同级且互不依赖**，可以只装其中一个 |
+
+两个插件共用**同一个机器人播放器和发声身份**，不是两位可独立调音量的用户。用云音乐切换播放源时，BiliAudio 会放弃自己的列表续播；它不会修改云音乐插件的代码或配置。
+
+## 能播什么？
+
+| 输入 | 支持情况 |
+| --- | --- |
+| B 站公开视频链接、`b23.tv` 单视频短链接 | 立即播放；粘贴带链接的标题文字也可以 |
+| 多 P 视频 | 用链接中的 `?p=2` 指定分 P，或用 `!bili list` 连播 |
+| 公开收藏夹、UP 主合集/系列 | 顺序或随机播放；一次最多读取前 100 条，轮到时才解析音频 |
+| 直接输入 BV 号、单条加入待播列表、交互式选分 P | 暂不支持 |
+| 登录、观看历史、私密收藏夹、付费和 DRM 内容 | 不支持，也不计划接入账号 |
+
+构建产物分别面向 TS3AudioBot `0.12.0` 和 master nightly；插件 DLL 必须与实际运行的机器人版本匹配。
 
 仓库只提交源码，不提交机器人依赖 DLL 或编译产物。正式 Release 发布前，可以从成功的 [Actions 构建](https://github.com/Plumess/TS3AudioBot-BiliAudio/actions/workflows/build.yml)下载对应 ZIP；发布后也可从 Releases 下载。
 
@@ -19,9 +45,15 @@ BiliAudio 是可选安装的独立插件，不会修改云音乐插件。它支�
 curl -fsSLo biliaudio-install.py https://github.com/Plumess/TS3AudioBot-BiliAudio/releases/latest/download/install.py && python3.11 biliaudio-install.py --compose ./docker-compose.yml
 ```
 
-安装器会识别机器人容器的 `./data` bind mount，下载官方 yt-dlp 和匹配的插件 ZIP，核对 Release 校验值与**运行中机器人的 DLL 指纹**，备份旧文件、生成可自动加载的 Compose 附加文件，启动解析服务并检查健康状态。重复执行可升级；不匹配的稳定版或 nightly 会在改动文件前停止。若主文件名不是 `docker-compose.yml`，替换 `--compose` 参数；使用非标准机器人镜像时可用 `--bot-dll` 指定容器内 DLL 路径。
+这行命令会依次：
 
-安装器只支持常见的 Compose 文件名、运行中的机器人服务和 bind mount 数据目录；已有手工部署的侧车、用户维护的同名 override 文件或自定义插件目录会停止并给出原因，不会强行覆盖。可用 `--service` 指定机器人服务名。交互运行时可选择按 TeamSpeak 服务器组 ID 或用户 UID 授权，也可跳过；非交互运行默认不改 `rights.toml`。之后在机器人聊天中执行 `!plugin load BiliAudio.dll`，更新已有插件时先 `!plugin unload BiliAudio.dll` 再加载，修改了权限则再执行 `!rights reload`。远程脚本会在本机执行；可先检查下载的 `biliaudio-install.py` 再运行。
+1. 读取**运行中**机器人的 DLL 指纹，下载并校验匹配的插件 ZIP 和官方 yt-dlp。不匹配就停止，不动现有文件。
+2. 备份旧文件，安装插件，生成后续 `docker compose` 启动也能自动加载的附加配置。
+3. 启动解析服务并等待健康检查；失败则恢复旧文件和配置。重复运行可用于升级。
+
+安装时会询问是否按 TeamSpeak **服务器组 ID**或**用户 UID**授权；直接回车跳过，非交互运行也默认不改 `rights.toml`。安装成功后，仍需在机器人聊天中执行 `!plugin load BiliAudio.dll`；升级已加载的插件时，先 `!plugin unload BiliAudio.dll` 再加载。改过权限则执行 `!rights reload`。
+
+安装器只接管常见 Compose 文件名、运行中的机器人服务和 bind mount 数据目录。已有手工部署的解析服务、用户维护的同名 override 文件或自定义插件目录会收到提示，不会被覆盖。主文件名不同可改 `--compose`；机器人服务名不同用 `--service`；非标准镜像可用 `--bot-dll` 指定容器内 DLL 路径。远程脚本会在本机执行，可先检查下载的 `biliaudio-install.py` 再运行。
 
 ## Docker Compose 手动安装
 
