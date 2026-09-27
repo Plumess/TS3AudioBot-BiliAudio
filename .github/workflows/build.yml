@@ -21,7 +21,7 @@ jobs:
           - variant: master-nightly
             bot_url: https://splamy.de/api/nightly/projects/ts3ab/master/download
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Download matching bot references
         run: |
           curl -fL --retry 3 "${{ matrix.bot_url }}" -o /tmp/ts3ab.zip
@@ -41,7 +41,7 @@ jobs:
           cp src/bin/Release/netcoreapp3.1/BiliAudio.dll src/extractor.py examples/docker-compose.bili.yml dist/
           cd dist
           zip -q -j "../BiliAudio-${{ matrix.variant }}.zip" ./*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: BiliAudio-${{ matrix.variant }}
           path: BiliAudio-${{ matrix.variant }}.zip
@@ -53,7 +53,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           pattern: BiliAudio-*
           merge-multiple: true
