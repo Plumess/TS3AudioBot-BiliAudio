@@ -1,4 +1,4 @@
-"""Small, optional bridge from the legacy bot to the official yt-dlp release."""
+"""连接旧版机器人与官方 yt-dlp 发布文件的可选解析服务。"""
 
 import json
 import os
@@ -17,6 +17,7 @@ LIST_LIMIT = 100
 
 def yt_dlp_command(binary):
     path = shutil.which(binary) or binary
+    # zipapp 使用当前 Python，避免系统默认解释器版本过旧。
     return [sys.executable, path] if zipfile.is_zipfile(path) else [path]
 
 
@@ -108,6 +109,7 @@ class Handler(BaseHTTPRequestHandler):
             SLOTS.release()
 
     def list_entries(self, url):
+        # 只读取扁平列表；音频地址留到曲目实际开始播放时再解析。
         result = subprocess.run(
             [*YTDLP_COMMAND, "--no-cache-dir", "--yes-playlist", "--flat-playlist",
              "--playlist-end", str(LIST_LIMIT), "--dump-single-json", "--no-warnings",

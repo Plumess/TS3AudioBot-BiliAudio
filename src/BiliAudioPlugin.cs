@@ -176,6 +176,7 @@ namespace BiliAudio
                     return;
                 if (!e.SongEndedByCallback)
                 {
+                    // 手动停止或切换音源时放弃列表，避免插件抢回播放权。
                     lock (stateLock) queue = null;
                     return;
                 }
@@ -222,6 +223,7 @@ namespace BiliAudio
         {
             if (!shuffle)
             {
+                // 关闭随机模式时，只恢复待播条目的原始顺序，不重播已播条目。
                 entries.Sort(position, entries.Count - position, Comparer<(int Index, string Url)>.Create((a, b) => a.Index.CompareTo(b.Index)));
                 return;
             }
@@ -404,6 +406,7 @@ namespace BiliAudio
 
         public string Publish(string url, System.Collections.Generic.Dictionary<string, string> headers)
         {
+            // 新曲目发布后，上一曲目的本地中继地址立即失效。
             var next = Guid.NewGuid().ToString("N");
             Volatile.Write(ref current, new RelayEntry
             {

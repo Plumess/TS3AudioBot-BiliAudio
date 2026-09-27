@@ -1,51 +1,70 @@
-# BiliAudio for TS3AudioBot
+# BiliAudio：TS3AudioBot 的 B 站音频插件
 
-Optional Bilibili audio playback for TS3AudioBot. Plays public videos, favorites, creator collections/series, and multi-part videos. Lists can play in order or shuffled order. The extractor uses the official `yt-dlp` release; audio is streamed through a small local relay without storing media files.
+BiliAudio 是可选安装的独立插件，不会修改云音乐插件。它支持播放 B 站公开视频、公开收藏夹、UP 主合集/系列及多 P 视频；列表可顺序或随机播放。站点解析交给 [yt-dlp](https://github.com/yt-dlp/yt-dlp)，音频通过本地服务流式转发，不保存媒体文件。
 
-## Compatibility
+## 适用范围
 
-The build workflow targets TS3AudioBot 0.12.0 and the master nightly build. Choose the archive matching your bot when a release is available. FFmpeg, Python 3.10+, and a current `yt-dlp` executable are required. This plugin does not install or modify YunPlugin.
+- 支持完整视频链接和 `b23.tv` 单视频短链接；多 P 视频可用链接中的 `?p=2` 指定分 P，也可用 `!bili list` 连播。
+- 每次最多读取列表前 100 条，只在轮到某条视频时解析其音频地址。
+- 不支持直接输入 BV 号、单条视频加入待播列表或交互式选分 P。账号登录、观看历史、私密收藏夹、付费及 DRM 内容也不在支持范围内。
+- 需要 TS3AudioBot、FFmpeg、Python 3.10+ 和官方发布的 `yt-dlp`。构建流程分别适配 TS3AudioBot 0.12.0 与 master nightly，请使用与机器人版本匹配的插件 DLL。
 
-## Install without Docker
+仓库只提交源码，不提交机器人依赖 DLL 或编译产物。正式 Release 发布前，可以从成功的 [Actions 构建](https://github.com/Plumess/TS3AudioBot-BiliAudio/actions/workflows/build.yml)下载对应 ZIP；发布后也可从 Releases 下载。
 
-1. Download the matching `BiliAudio-*.zip` release artifact. Put `BiliAudio.dll` into the bot's configured `plugins` directory.
-2. Install the official [yt-dlp release](https://github.com/yt-dlp/yt-dlp/releases) so `yt-dlp` is on `PATH`. Run `python extractor.py` from the archive on the same machine as the bot, using Python 3.10 or newer. It listens on `127.0.0.1:18944` by default. Official Python zipapps run with the same interpreter as the extractor, even if the system's default `python3` is older.
-3. Add `cmd.bili.*` and `cmd.bplay` to the appropriate `rights.toml` rule. Load the plugin with `!plugin load BiliAudio.dll`, or add that command to the bot's on-connect actions.
+## Docker Compose 安装
 
-Set `BILI_YTDLP_BIN` for a custom yt-dlp path or `BILI_EXTRACTOR_URL` in the bot process for a non-default extractor address. Keep the extractor private; it has no user authentication.
+以下示例假设机器人服务名为 `ts3audiobot`，数据目录为第一个 Compose 文件旁的 `./data`：
 
-## Install with Docker Compose
-
-For a Compose service named `ts3audiobot`, put `BiliAudio.dll` in the bot's `data/plugins/` directory and copy the archive's `extractor.py` there as `bili-extractor.py`. Download the official yt-dlp release executable to `data/plugins/tools/yt-dlp` and make it executable. The sample [Compose overlay](examples/docker-compose.bili.yml) shares the bot's network namespace, so the extractor remains on loopback and no new port is published. Use it alongside your bot Compose file, then grant `cmd.bili.*` and `cmd.bplay` and load the plugin as above.
+1. 将 ZIP 中的 `BiliAudio.dll` 放到 `data/plugins/`，将 `extractor.py` 复制为 `data/plugins/bili-extractor.py`。
+2. 将官方 [yt-dlp 发布文件](https://github.com/yt-dlp/yt-dlp/releases)放到 `data/plugins/tools/yt-dlp`，并赋予执行权限。ZIP 不包含 yt-dlp 或 FFmpeg。
+3. 将[示例 Compose 附加文件](examples/docker-compose.bili.yml)与现有 Compose 文件一起启动：
 
 ```sh
 docker compose -f docker-compose.yml -f /path/to/examples/docker-compose.bili.yml up -d
 ```
 
-Compose resolves the overlay's `./data/...` bind paths relative to the first Compose file. If your bot service has a different name, change `network_mode` accordingly. Do not use the host-only installation steps inside a container unless both processes share a network namespace.
+附加服务与机器人共用网络命名空间，解析服务只监听 `127.0.0.1:18944`，不会对外开放新端口。若机器人服务名不同，需修改附加文件中的 `network_mode`。附加文件的 `./data/...` 路径相对于第一个 Compose 文件解析。
 
-## Commands
+最后，在机器人的 `rights.toml` 中授予相应用户 `cmd.bili.*` 和 `cmd.bplay` 权限；执行 `!plugin load BiliAudio.dll` 加载插件，或将它加入机器人的连接后执行命令。
+
+## 非 Docker 安装
+
+1. 将匹配机器人版本的 ZIP 中的 `BiliAudio.dll` 放入机器人配置的插件目录。
+2. 安装 Python 3.10+ 与官方 yt-dlp，并确保 `yt-dlp` 可从 `PATH` 找到。用同一台机器上的 Python 运行 ZIP 中的 `extractor.py`，默认监听 `127.0.0.1:18944`。如果 yt-dlp 是 Python zipapp，解析服务会使用自己的 Python 解释器运行它。
+3. 按上述方式配置权限并加载插件。FFmpeg 仍由机器人播放链路使用。
+
+可设置解析服务的 `BILI_YTDLP_BIN` 指定 yt-dlp 路径；可在机器人进程中设置 `BILI_EXTRACTOR_URL` 指定解析服务地址。解析服务没有用户认证，不要将它暴露到公网。
+
+## 命令
+
+| 命令 | 作用 |
+| --- | --- |
+| `!bili play <视频或列表链接>` | 立即播放；列表链接按顺序播放 |
+| `!bplay <视频或列表链接>` | `!bili play` 的简写 |
+| `!bili list <列表或多P视频链接>` | 顺序播放整个列表 |
+| `!bili shuffle <列表或多P视频链接>` | 随机播放列表 |
+| `!bili mode seq` / `!bili mode random` | 调整当前列表剩余条目的播放顺序 |
+| `!bili next` | 播放当前列表的下一条 |
+| `!bili clear` | 清空待播列表，当前音频继续播放 |
+
+例如：
 
 ```text
-!bili play https://www.bilibili.com/video/BV...
-!bplay https://www.bilibili.com/video/BV...
+!bili play https://www.bilibili.com/video/BV1LVbu64Ewi
+!bili play https://www.bilibili.com/video/BV1bK411W797?p=2
 !bili list https://space.bilibili.com/2142762/lists/3662502?type=season
-!bili shuffle https://www.bilibili.com/medialist/detail/ml...
-!bili mode seq
-!bili mode random
-!bili next
-!bili clear
+!bili shuffle https://www.bilibili.com/medialist/detail/ml1103407912
 ```
 
-`!bili play` detects list links and plays them in order. `!bili list` also accepts a multi-part video URL. `!bili mode` changes the order of remaining entries; `!bili clear` leaves the current track playing. Pasted text containing a Bilibili URL is accepted. Each request loads at most the first 100 list entries, then resolves an audio URL only when its track starts. Private favorites, paid/DRM videos, and login-only content are not supported.
+粘贴的文字中只要含有可识别的 B 站链接，也可以直接交给播放命令。`!bili play` 遇到列表链接时会按顺序播放；`!bili mode` 只影响尚未播放的条目。
 
-## Related work and thanks
+## 相关项目与致谢
 
-- [Splamy/TS3AudioBot](https://github.com/Splamy/TS3AudioBot) provides the bot and plugin API (OSL-3.0).
-- [yt-dlp/yt-dlp](https://github.com/yt-dlp/yt-dlp) and its Bilibili extractor contributors provide the site parsing logic. This project runs its official release as a separate tool; it does not reimplement their extractor.
-- [xxmod/TS3AudioBot-BiliBiliPlugin](https://github.com/xxmod/TS3AudioBot-BiliBiliPlugin) is an existing community plugin with account login, history, queue, multi-part selection, and collection playback (MPL-2.0). Choose it for account-based features. BiliAudio is a separate implementation focused on public favorite/list links, sequential or shuffled playback, Docker deployment, and low disk usage; no code from that project was copied.
-- [577fkj/TS3AudioBot-CloudMusic-plugin](https://github.com/577fkj/TS3AudioBot-CloudMusic-plugin) demonstrates the release-and-install pattern used by TS3AudioBot plugins.
+- [Splamy/TS3AudioBot](https://github.com/Splamy/TS3AudioBot) 提供机器人和插件 API（OSL-3.0）。
+- [yt-dlp/yt-dlp](https://github.com/yt-dlp/yt-dlp) 及其 B 站提取器贡献者维护站点解析逻辑。本项目调用其独立发布文件，不复制提取器源码。
+- [xxmod/TS3AudioBot-BiliBiliPlugin](https://github.com/xxmod/TS3AudioBot-BiliBiliPlugin) 是已有的社区插件，提供登录、历史、单条队列、分 P 选择和合集播放等功能（MPL-2.0）。BiliAudio 侧重公开链接、列表顺序/随机播放及 Docker 部署，没有复制该项目的代码。
+- [577fkj/TS3AudioBot-CloudMusic-plugin](https://github.com/577fkj/TS3AudioBot-CloudMusic-plugin) 提供了 TS3AudioBot 插件发布与安装方式的参考。
 
-## Development
+## 开发与验证
 
-Place the matching TS3AudioBot, TSLib, and NLog DLLs in `src/lib/`, then build `src/BiliAudio.csproj` with the .NET Core 3.1 SDK. Run `python3 -m unittest discover -s src -p 'test_*.py'` for extractor checks. The reference DLLs and build output are intentionally ignored by Git.
+将对应版本的 `TS3AudioBot.dll`、`TSLib.dll` 和 `NLog.dll` 放入 `src/lib/`，使用 .NET Core 3.1 SDK 构建 `src/BiliAudio.csproj`。运行 `python3 -m unittest discover -s src -p 'test_*.py'` 检查解析服务。CI 会分别对稳定版和 nightly 构建、测试并打包；依赖 DLL 和构建产物不会提交到 Git。
